@@ -1,0 +1,218 @@
+# **Syncing Scripts**
+## List of scripts available
+```
+|-- iplist.txt
+|-- rsyncScript.sh
+|-- rsync_fw_cert.sh
+|-- start-rsync.sh
+|-- update_ssid.sh
+```
+
+## **RSYNC Script `rsyncScript.sh`**
+### Overview
+This script automates the process of syncing files from a local directory to a remote server using `rsync`. It supports a "dry run" mode, allows syncing to multiple predefined servers, and verifies SSH connections before initiating the file transfer.
+
+### Purpose
+*   **Sync Files:** Transfers files from the local directory (`$BASE_PATH`) to a remote server (`$SERVER_IP`) using `rsync`.
+    
+*   **Dry Run Mode:** Offers a dry-run feature that simulates the file transfer without actually copying any files.
+    
+*   **Server Selection:** Allows you to specify the target server (e.g., `pi-neo-1`, `pi-neo-2`) via command-line arguments.
+    
+*   **SSH Verification:** Verifies the SSH connection to the server before proceeding with the transfer.
+    
+*   **Update from Git:** Ensures the local repository is updated with the latest code from the development branch.
+
+### Notes
+*   **Predefined Servers:** The script includes a list of predefined servers, with their respective IPs. This can be customized based on your environment.
+    
+*   **SSH Key Setup:** The script assumes that SSH keys are properly configured for passwordless login to the remote server.
+    
+*   **Rsync Flags:** The script uses the `-avz` flags for `rsync`, which preserve file attributes, enable compression, and run the transfer in archive mode.
+    
+*   **Exclude Specific Files/Directories:** Files and directories such as `device_data.txt`, `certs/`, `firmware/`, and `.git/` are excluded from the sync.
+
+## **RSYNC Firmware & Certificates `rsync_fw_cert.sh`**
+### Overview
+This script automates the process of syncing firmware files, certificates, and device-related data between a local system and remote servers using SSH and rsync. The script fetches data from an S3 bucket, prepares it for transfer, and ensures that the required SSH configurations and connections are set up. The user interacts with the script through a simple terminal interface where they select the target server, confirm their order ID, and choose whether to run the sync in a dry-run mode (simulation) or perform the actual file transfer.
+
+### Purpose
+The main purpose of this script is to streamline the deployment of firmware and certificates to remote devices. It:
+*   Fetches necessary data from an S3 bucket.
+    
+*   Verifies SSH access to remote servers.
+    
+*   Syncs the required files (firmware, certificates, and other related files) to the target server for further processing or flashing.
+    
+*   Includes an option to run in dry-run mode, allowing users to preview the sync process without making any actual changes.
+
+### Key Features
+*   **User Interaction:**
+    *   Displays a list of available servers and allows the user to select one.
+        
+    *   Confirms the order ID to ensure the correct firmware and certificate set are chosen for sync.
+        
+    *   Offers a dry-run mode to simulate the transfer without making changes.
+        
+*   **File Syncing:**
+    *   Copies firmware from a local directory (`FW_SOURCE`) to the target server.
+        
+    *   Syncs certificates and other files from an S3 bucket to the target server.
+        
+*   **SSH Validation:**
+    *   Ensures that SSH configurations for the selected server are present in `~/.ssh/config`.
+        
+    *   Tests the SSH connection to ensure that the remote system is accessible.
+        
+*   **Cleanup:**
+    *   Removes temporary directories after syncing to keep the local system clean.
+
+### Notes
+*   **SSH Configuration Requirement:**
+    *   The script assumes that SSH configurations for the target server are already set up in the `~/.ssh/config` file. If they are missing, the script will prompt the user to add the necessary configuration.
+        
+    *   This is critical for the script to function properly, as it uses SSH for secure file transfer and testing the connection.
+        
+*   **Dry-Run Mode:**
+    *   The dry-run mode allows users to preview the file transfer process without actually syncing any files. This can be useful for verifying that the files will be correctly synced before running the actual transfer.
+        
+*   **File Transfer Using `rsync`:**
+    *   The `rsync` command is used to synchronize files between the local system and remote servers. It’s a powerful tool for efficient file syncing, ensuring that only changed or new files are copied.
+        
+    *   The script ensures that unnecessary files (like `.git` directories) are excluded during the sync.
+        
+*   **AWS S3 Integration:**
+    *   The script integrates with AWS S3 to fetch device data (`device_data.txt`) and sync firmware and certificate files stored in an S3 bucket.
+        
+    *   The S3 bucket (`MATTER_BUCKET`) should be set up with the necessary files for the deployment.
+        
+*   **Error Handling:**
+    *   If the SSH connection or file transfer fails, the script will display appropriate error messages and terminate to prevent further execution.
+        
+    *   Ensure that the AWS CLI is configured properly on the local system for the `aws s3 cp` and `aws s3 sync` commands to work.
+        
+*   **Order ID Validation:**
+    *   The script validates the Order ID input to ensure that it's not empty and prompts for confirmation before proceeding.
+        
+*   **Temporary Directory Cleanup:**
+    *   The script creates temporary directories to hold the files being transferred. After the transfer is complete, it removes these directories to prevent clutter on the local system.
+
+## **Start RSYNC Script `start-rsync.sh`**
+### Overview
+This script is designed to automate the process of syncing files (firmware, certificates, and related data) from a local directory to a remote server using `rsync`. It prompts the user to select a server from a predefined list of IP addresses, verifies that SSH configuration for the selected server exists, tests the SSH connection, and then performs the file transfer. The script also includes a dry-run mode to simulate the sync without making actual changes, allowing users to confirm the actions before executing them.
+
+### Purpose
+The primary goal of this script is to streamline and automate the deployment of firmware and certificates to remote servers, simplifying the syncing process for users. The script ensures:
+*   A valid SSH configuration is present for the selected server.
+    
+*   SSH connection is working before proceeding with the file sync.
+    
+*   The file sync process is customizable with the option to run in dry-run mode.
+
+### Key Features
+*   **Server Selection:**
+    *   Displays a list of available servers (from `iplist.txt`), each associated with an IP address and description.
+        
+    *   Allows the user to select a server to sync files to by entering a corresponding number.
+        
+*   **SSH Validation:**
+    *   Checks if the SSH configuration for the selected server exists in the `~/.ssh/config` file.
+        
+    *   If missing, it prompts the user with an example configuration and exits if not fixed.
+        
+    *   Tests the SSH connection to ensure the server is accessible before proceeding.
+        
+*   **Dry-Run Mode:**
+    *   Users can run the sync in dry-run mode (`--dry-run`), which simulates the transfer without making any actual changes.
+        
+    *   Useful for verifying the file syncing process before performing the actual operation.
+        
+*   **File Syncing:**
+    *   Uses `rsync` to transfer files from the local directory (`BASE_PATH`) to the target server (`TARGET_PATH`).
+        
+    *   Excludes unnecessary files like `device_data.txt`, `certs/`, `firmware/`, and `.git/` to avoid syncing irrelevant files.
+        
+*   **User Interaction:**
+    *   Prompts the user to choose whether to proceed with the sync and whether to enable dry-run mode.
+        
+    *   Ensures that the user confirms the IP address selection and sync action before proceeding with the file transfer.
+        
+*   **Color-Coded Output:**
+    *   Provides a visually enhanced output with color-coded messages (Green for success, Yellow for warnings, Red for errors, and Blue for informational messages).
+
+### Notes
+*   **SSH Configuration:**
+    *   The script requires SSH configuration to be present for the selected server in `~/.ssh/config`. If it's missing, the script will stop and ask the user to add it manually.
+        
+    *   This is essential for establishing a secure SSH connection with the target server for file transfer.
+        
+*   **Dry-Run Mode:**
+    *   The script allows users to simulate the file syncing process by using the dry-run mode. This is helpful for users to check which files will be transferred and whether the rsync command works as expected, without actually modifying the remote server.
+        
+    *   Dry-run mode is enabled by setting the `DRY_RUN` variable to `true` when prompted.
+        
+*   **File Exclusion:**
+    *   The script excludes specific files and directories (e.g., `device_data.txt`, `certs/`, `firmware/`, `.git/`) from being synced. This ensures that only relevant files are transferred to the remote server.
+        
+*   **Validation of Input:**
+    *   The script validates user input to ensure that a valid server is selected and that the confirmation prompts are answered before proceeding with the sync operation.
+        
+    *   If an invalid choice is made, the script will prompt the user to choose again.
+        
+*   **Error Handling:**
+    *   If an error occurs (e.g., SSH connection fails or no valid SSH configuration is found), the script will display a message and exit to prevent any further actions from being taken.
+        
+*   **Server List:**
+    *   The server list is loaded from the `iplist.txt` file. The file must be formatted with each line containing an IP address and a description of the server (e.g., `192.168.1.100 My Server`).
+        
+    *   The script expects this file to be in the same directory as the script or to be specified as part of the `BASE_PATH`.
+
+## **Updating SSID Script `update_ssid.sh`**
+### Overview
+This script is designed to retrieve the SSID (Service Set Identifier) from the `hostapd.conf` file, which is used for configuring the wireless access point. The script then updates a specified `testscript.ini` file with this SSID, modifying certain fields related to Wi-Fi configuration. The update is performed using the `crudini` tool, which allows for modifying INI files in a structured way.
+
+### Purpose
+The script's purpose is to automate the process of extracting the SSID from the `hostapd.conf` file and updating a configuration file (`testscript.ini`) with this SSID. This ensures that the Wi-Fi settings in the `testscript.ini` file are always in sync with the current SSID configuration of the access point, simplifying network management and testing.
+
+### Key Features
+*   **SSID Extraction:**
+    *   The script reads the SSID from the `hostapd.conf` file, which is typically used to configure the access point's Wi-Fi network. It looks for a line beginning with `ssid=` and extracts the value following the equal sign.
+        
+*   **INI File Update:**
+    *   Once the SSID is retrieved, the script updates the `testscript.ini` file, specifically modifying the values associated with `wifi_station_inputssid_command` and `wifi_station_rpi_ssid` fields to reflect the current SSID.
+        
+    *   This update ensures that the Wi-Fi configuration in `testscript.ini` matches the SSID of the current access point.
+        
+*   **Use of `crudini`:**
+    *   The script uses the `crudini` tool, which is designed to manipulate INI files. It checks if `crudini` is available and, if so, uses it to make the necessary changes. If `crudini` is not found, the script exits with an error message.
+        
+*   **Error Handling:**
+    *   If the `ssid` is not found in `hostapd.conf`, the script outputs an error message indicating that the SSID could not be retrieved.
+        
+    *   If the `crudini` tool is not available, the script exits with a message prompting the user to install it or use an alternative method to modify INI files.
+
+### Notes
+*   **Dependencies:**
+    *   The script relies on the `crudini` tool for editing INI files. This tool is expected to be available on the system. If it is not installed, the script will exit with an error message suggesting an alternative approach (such as using Python).
+        
+*   **INI File Modification:**
+    *   The `crudini` commands modify the `testscript.ini` file located at `/usr/src/app/ATSoftwareDevelopmentTool/FlashingTool/testscript.ini`. The script specifically updates two fields:
+        *   `wifi_station_inputssid_command` is set to `FF:1;$ssid`.
+            
+        *   `wifi_station_rpi_ssid` is set to the SSID value extracted from `hostapd.conf`.
+            
+*   **SSID Retrieval:**
+    *   The script assumes that the `hostapd.conf` file contains a line starting with `ssid=`. If this line is absent or incorrectly formatted, the script will fail to extract the SSID and will output an error message.
+        
+*   **Security Considerations:**
+    *   The script directly interacts with Wi-Fi configuration files, which could contain sensitive network information. Users should ensure that the script is run in a secure environment and that only trusted users have access to the files it modifies.
+        
+*   **Potential Enhancements:**
+    *   **Error Logging:** Adding detailed logging could help track actions and provide more information in case of failures.
+        
+    *   **Alternative INI Editing Methods:** If `crudini` is unavailable, the script could fall back on Python's `configparser` module or another method for editing INI files.
+        
+    *   **Parameterization:** The script could be enhanced to allow the user to specify the path to the `hostapd.conf` and `testscript.ini` files, making it more flexible.
+        
+*   **Compatibility:**
+    *   The script is tailored for environments where `crudini` is installed, but this may not always be the case on all systems. In such cases, users will need to either install `crudini` or adapt the script to use another tool for editing INI files.
