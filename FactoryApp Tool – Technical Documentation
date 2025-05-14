@@ -1,0 +1,910 @@
+# Overview
+This is Python-based GUI tool for flashing firmware and certificates to ESP32-S3 and ESP32-H2 devices via serial USB. It supports:
+- Auto-detection of serial ports for multiple devices.
+- Independent flashing for S3 and H2 using esptool.
+- Serial data monitoring post-flashing.
+- A threaded architecture to prevent GUI freeze.
+- Logging and user feedback through the UI.
+
+# Project Structure
+
+```
+main
+ |--- FlashingTool
+           |--- components
+                     |--- adminLoginWindow
+                     |--- aht20Sensor
+                     |--- commandWindow
+                     |--- dmmReader
+                     |--- flashCert
+                     |--- flashFirmware
+                     |--- loadTestScript
+                     |--- manualTest
+                     |--- processOrderNumber
+                     |--- readOrderFile
+                     |--- rebootPinS3
+                     |--- sendToPrinter
+                     |--- serialCom
+                     |--- servoControl
+                     |--- settingWindow
+                     |--- toolsBar
+                     |--- updateDB
+                     |--- uploadReport
+                     |--- wifiDriver
+                     |--- writeDevInfo
+           |--- images
+           |--- openocd
+ |--- combined-setup-script
+           |--- setup_kiosk.sh
+           |--- setup_network.sh
+           |--- setup_raspberry_pi.sh 
+ |--- individual-setup-script
+           |--- setup_i2c.sh
+           |--- setup_internet.sh
+           |--- setup_kiosk.sh
+           |--- setup_prereq.sh
+           |--- setup_samba.sh
+           |--- setup_tailscale_zerotier.sh
+           |--- setup_wifi.sh
+           |--- setup_xrdp.sh
+ |--- scripts
+           |--- iplist.txt
+           |--- rsyncScript.sh
+           |--- rsync_fw_cert.sh
+           |--- start-rsync.sh
+           |--- update_ssid.sh
+```
+# Components
+## **Admin Login Component**
+This is a simple Tkinter-based admin login interface. The component provides a basic password authentication mechanism with encryption.
+### Features:
+1. **Password Entry**: Users can input a password in a masked field.
+2. **Password Validation**: The hardcoded password "admin" is checked. If correct, it encrypts the password and saves it to a file.
+3. **Encryption**: The password is ecrypted using the `cryptography.fernet` library and saved to `password.txt`.
+### File Overview:
+1. **secret.key**: Stores the encryption key for password encryption.
+2. **password.txt**: Stores the encrypted password.
+### Usage:
+1. To use the component, instantiate `AdminLoginApp` with a Tkinter master window and a caller object.
+2. The component is unused and can be incorporated into an app for password protection.
+### Note:
+This component is not currently active in app and is provided for future use if admin login functionality is needed.
+
+## **AHT20 Sensor**
+The `aht20Sensor` module handles temperature and humidity readings using the AHT20 sensor. It acts as a wrapper around the AHT20 class (imported from local module) and formats the output for display or logging purposes.
+### Purpose:
+This component is responsible for:
+- Initializing the AHT20 sensor.
+- Reading temperature and humidity data.
+- Formatting the output into human-readable strings with units.
+### File: `aht20Sensor.py`
+**Class:** `SensorLogger`
+
+`__init__(self)`
+- Instantiates the AHT20 sensor by creating and object of the AHT20 class.
+
+`read_temp_sensor(self)`
+- Reads temperature from the sensor.
+- Returns a formatted string like: `"24.56 °C"`
+
+`read_humid_sensor(self)`
+- Reads humidity from the sensor.
+- Returns a formatted string like: `"63.21 %RH"`
+### Dependencies
+1. Relies on the local AHT20 module (AHT20.py) which must contain the actual sensor communication logic.
+2. Uses Python's logging module for logging purposes (though not heavily used in the current implementation).
+
+## **Command Window**
+The `commandWindow.py` module provides a simple Tkinter-based settings interface for inputting and saving device-specific parameters like Serial Number and Device ID. These values are stored in a configuration file (`sendCommand.ini`) for later use by other parts of the application.
+
+### Purpose
+The component allows users to:
+- View and edit the device Serial Number and Device ID.
+- Save the settings persistently in a `.ini` file format.
+
+### File: `commandWindow.py`
+**Class:** `CommandWindow`
+
+`__init__(self, master)`
+- Initializes the window and UI elements.
+- Load existing settings from `sendCommand.ini` if available.
+
+`create_widgets(self)`
+- Creates and lays out the Tkinter input fields and buttons:
+  - Serial Number Entry
+  - Device ID Entry
+  - Save Button
+
+`load_settings(self)`
+- Reads and populates the entry fields with previously saved values from the `[SETTINGS]` section in `sendCommand.ini`.
+
+`save_settings(self)`
+- Save current input values into the `.ini` file under the `[SETTINGS]` section.
+- Closes the window after saving.
+
+### Configuration File
+- Path: `sendCommand.ini`
+- Format:
+`[SETTINGS]`
+ `SerialNumber = Your_Serial`
+ `DeviceID = Your_Device_ID`
+
+## **DMM Reader**
+The `dmmReader.py` module handles USB-based multimeter detection and data reading for supported devices (mainly UT61E+ series via HID). It interfaces with the GUI to display voltage measurements (3.3V and 5V) from connected meters and writes results to a file.
+### Purpose
+- Detects USB HID-connected multimeter (CP2110 and QinHeng-based).
+- Reads voltage values.
+- Routes measured data to GUI entry fields and a text file.
+### Dependencies
+- `hid` (via `hidapi`)
+- `tkinter`
+- `UT61EPLUS` class from `components/dmmReader/ut61eplus.py`
+- Python logging and basic file operations.
+### Class: `DeviceSelectionApp`
+
+`__init__(self, parent_frame, status_label1, status_label2)`
+- Initializes with parent GUI frame and two status entry fields.
+- Calls `create_widgets()`.
+
+`create_widgets(self)`
+- Builds UI:
+  - Multimeter label.
+  - Hidden refresh button (intended for debugging/dev).
+  - Device button panel (dynamically populated later).
+
+`refresh_devices(self)`
+- Scan USB ports for supported multimeters (CP2110 and QinHeng).
+- Appends found devices to `self.devices` list.
+- Updates the device button panel via `update_device_buttons()`.
+
+`update_device_buttons(self)`
+- Clears and re-creates buttons for each detected multimeter.
+- Each button links to its device index via `select_device()`.
+
+`select_device(self, device_number)`
+- Creates a `UT61EPLUS` object for the selected index.
+- Triggers measurement via `read_multimeter()`.
+
+`read_multimeter(self, device_number)`
+- Opens communication with the selected meter.
+- Takes a measurement and logs it.
+- Writes result to `dmm_output.txt`.
+- Populates the voltage into `status_label1` (3.3V) or `status_label2` (5V) based on the index.
+
+`insert_3_3V_dmm2entry(self, volt)`
+- Clears and sets value in the first entry field (3.3V).
+
+`insert_5V_dmm2entry(self, volt)`
+- Clears and sets value in the second entry field (5V).
+
+`check_voltage(self, voltage)`
+- Determines if the voltage is a valid 3.3V or 5V reading.
+- Updates the appropriate entry field (legacy/debug usage).
+
+`is_3_3_voltage(self, voltage)`
+- Returns `True` if voltage is in loose 3.3V range (`1.00V - 5.00V`).
+
+`is_5_voltage(self, voltage)`
+- Returns `True` if voltage is in loose 5 range (`3.00V - 7.00V`).
+
+## **Certificate Flashing Handler**
+This module is responsible for managing the secure certificate flashing process onto ESP32-S3 devices. It's built to handle both development and production environments and supports flashing via `esptool.py` or `OpenOCD`, depending on configuration.
+
+### Main Responsibilities
+- **Flash secure certificates** (`_esp_secure_cert.bin`) and corresponding partition binaries (`-partition.bin`) to target devices.
+- **Track used certificates** to prevent reuse by storing them in a local file (`used_cert_ids.pkl`).
+- **Handle different flashing tools**:
+   - `esptool.py` for UART-based flashing.
+   - `OpenOCD` for USB-JTAG-based flashing.
+
+### Certificate Structure
+Assumes certificate files are located in:
+`../../certs/<serialnumber>/espsecurecert/out/<foldername>/<uuid>/`
+
+Expected file formats:
+- `<uuid>_esp_secure_cert.bin`
+- `<uuid>-partition.bin`
+
+### Key Methods
+- `flash_certificates(...)`
+Main entry point to start the flashing process. Validate files, calls the correct flashing command, updates GUI labels, and log results.
+- `certify(...)`
+Executes actual flashing command based on selected tool and mode.
+- `get_cert_ids_for_order(...)`
+Filters cert IDs based on selected order number.
+- `get_qrcode_for_cert_id(...)`
+Returns the QR code associated with a given cert ID.
+- `get_manualcode_for_cert_id(...)`
+Returns the manual code associated with a given cert ID.
+- `get_flashing_esp32s3_cert_status()`
+Parses logs to update GUI with flash status.
+- `get_remaining_cert_ids(...)`
+Returns cert IDs that haven't been flashed yet.
+
+### Flashing Tool Paths
+Hardcoded OpenOCD config paths:
+`openocd_esp_usb_jtag_cfg_path = "<path-to>/esp_usb_jtag.cfg"`
+`openocd_esp32s3_builtin_cfg_path = "<path-to>/esp32s3-builtin.cfg"`
+
+## **Flashing ESP32 Devices**
+This module handles firmware flashing for ESP32-S3 and ESP32-H2 devices. It supports two flashing modes:
+- **esptool.py (UART)**
+- **OpenOCD (JTAG/USB)**
+
+The tool dynamically detects the target chip, locates required `.bin` file based on keywords, flashes them to the appropriate memory addresses, and provides real-time feedback through the GUI.
+
+### Flashing Logic
+Flashing behavior is determined by:
+- `use_esptool`: `True` = flash via `esptool.py`, else use `OpenOCD`
+- `chip_type`: Auto-detected as `esp32s3` or `esp32h2`
+
+The selected port and method determine which internal function is triggered:
+```
+if use_septool:
+   flash_esp32s3_with_esptool(...)
+else:
+   flash_esp32s3_with_openocd(...)
+```
+
+### Firmware File Discovery
+Instead of hardcoding firmware paths, the system dynamically searches for `.bin` files based on keywords.
+
+**Example:**
+```
+find_bin_path('bootloader', '/path/to/firmware')
+```
+This returns the first `.bin` file containing `'bootloader'` in its name. Used to find:
+- `bootloader`
+- `partition`
+- `app/application`
+- `ota`
+- `factory`
+
+### Functions
+`flash_esp32s3_wtih_esptool(selected_port, label, firmware_path)`
+
+Flashes ESP32-S3 using esptool. Parses progress using regex (`r"(\d+)%"`), updates GUI label in real time.
+
+Verify success with:
+```
+if "Hash of data verified." in output
+```
+
+1. `flash_esp32h2_with_esptool(selected_port, label, firmware_path)`
+
+    Similar to the S3 function. Also extracts MAC address from:
+    ```
+    MAC Address: <MAC>
+    ```
+   The MAC is stored in `esp32h2_mac_address.
+
+2. `flash_esp32s3_with_openocd(selected_port, label)`
+
+    Flashes ESP32-S3 using OpenOCD with a chip config. Uses:
+    ```
+    source /esp-idf/export.sh
+    openocd -f board/esp32s3-builtin.cfg -c "program_esp ..."
+    ```
+
+3. `flash_esp32h2_with_openocd(selected_port, label)`
+
+    Same as above, but uses:
+    ```
+    openocd -f board/esp32h2-builtin.cfg
+    ```
+
+### Output Parsing & Feedback
+Each function:
+- Reads process output line by line.
+- Updates GUI label based on real-time flashing progress.
+- Detects success/failure and reflects result visually.
+
+If flashing fails or hangs:
+- Process output is still captured.
+- Label turns red to indicate failure.
+- Output is logged for debugging.
+
+### Important Notes
+- `subprocess.terminate()` has been removed - it was killing process premature. Now replaced with:
+  ``` 
+  process.stdout.close()
+  process.wait()
+  ```
+- Global variables (like `esp32h2_mac_address`) should eventually be removed in favor of instances variables or returns.
+- Do not use hardcoded paths like `/usr/sr/app/...`. Use `os.getenv` or config files.
+- Flashing logic runs on a separate thread to keep GUI responsive.
+
+## **Load Test Script (INI Parser)**
+### Overview
+This component is responsible for reading and parsing `.ini` configuration files. It's used to load structured test scripts or configuration data needed during the flashing or validation processes.
+
+Built on Python's built-in `configparser` module, this class helps modularize test settings and organize them by sections and key-value pairs.
+
+### Purpose
+- Load `.ini` files containing test instructions or parameters.
+- Print all sections and their key-value pairs for inspection.
+- Designed for use with structured automation flows.
+
+### Class: `LoadTestScript`
+**Constructor**
+
+`def __init__(self, ini_file_path)`
+- **ini_file_path**: Full path to the `.ini` file to be loaded.
+- Loads the file and initializes a `ConfigParser` object.
+
+**Method:** `load_script()`
+
+`def load_script(self)`
+- Iterates through all sections in the `.ini` file.
+- Prints each section and its respective options with values.
+
+### Example Usage
+```
+script_loader = LoadTestScript("/path/to/test_config.ini")
+script_loader.load_script()
+```
+
+### Notes
+- This version only **prints** the config values. It does not return or store them.
+- For actual logic execution, you'll likely need to:
+   - Add methods to retrieve specific values.
+   - Convert values to correct data type (`int`, `float`, `bool`, etc).
+   - Add error handling for malformed `.ini` files or missing fields.
+
+## **Manual Test GUI (`manualtest.py`)**
+### Overview
+This component provides a **Tkinter-based GUI** window for manual testing. It dynamically generated buttons based on the contents of a `manual_test.ini` file. Each button corresponds to a command, which is sent through a predefined function when clicked.
+
+### Class: `ManualTestApp`
+**Constructor**
+`def __init__(self, root, send_command)`
+- **root**: The main `tk.Tk()` instance or a reference to the parent window.
+- **send_command**: A callback function that handles sending the selected command (e.g., through a serial interface).
+
+### Method: `open_manual_test_window()`
+Creates and opens a new window titled **Manual Test**.
+- Automatically searches the system for a `manual_test.ini` file.
+- If found, loads its sections and keys into a set of labeled buttons.
+- If not found, prints a message to the console.
+
+### Method: `find_manual_test_ini(start_dir)`
+Recursively searches for `manual_test.ini` starting from the given directory.
+
+`config_path = self.find_manual_test_ini("/")`
+- Searches **every subdirectory**, so be cautious of performance on large file systems.
+- Returns the full path of the `.ini` file if found; otherwise, returns `None`.
+
+### Method: `create_buttons_from_config(config, parent)`
+Creates a button for each key in each section of the `.ini` file.
+- Each section becomes a `LabelFrame`.
+- Each key-value pair becomes a button.
+- On click, the value with `\r\n` appended) is passed to `send_command`.
+
+### Method: `load_config(filename)
+Loads and returns a `ConfigParser object for the specified file.
+
+### Usage Example
+```
+root - tk.Tk()
+manual_app = ManualTestApp(root, send_command=your_send_function)
+manual_app.open_manual_test_window()
+```
+
+### Notes
+- The search for `manual_test.ini` starts from `/` by default.
+- `\r\n` is appended to commands for compatibility with serial protocols.
+- No error handling for invalid `.ini` format - should be added for production.
+
+## **Order Number Extractor (`processOrderNumber.py`)**
+### Overview
+This minimal component is responsible for extracting a **unique list of order numbers** from a list of order dictionaries. It ensures that duplicate order numbers are removed using Python`s `set` data structure.
+
+### Function: `get_order_numbers(orders)`
+**Signature**
+`def get_order_numbers(orders):`
+
+**Parameters**
+- **orders:** A list of dictionaries, where each dictionary is expected to have an `'order-no'` key.
+  ```
+  [
+     {"order-no": "ORD001", "other-info": "..."},
+     {"order-no": "ORD002", "other-info": "..."},
+  ]
+  ```
+
+**Returns**
+- A list of unique order numbers:
+  ```
+  ['ORD001', 'ORD002']
+  ```
+
+### How It Works
+- Uses a generator expression inside `set()` to extract all `order-no` values.
+- Converts the set back to a list before returning.
+- No guaranteed order due to use of `set`.
+
+### To-Do / Improvements
+- Consider returning a **sorted list** for consistently display:
+  ```
+  return sorted(set(order['order-no'] for order in orders))
+  ```
+- Add error handling to manage missing `'order-no'` keys 9e.g., using `.get()` with a fallback or validation step. 
+
+## **Order File Reader (`readOrderFile.py`)**
+### Overview
+This component is designed to **parse a structured text file** containing order data. Each line in the file represents a single order, with key-value pairs separated by commas and colons. The output is a list of dictionaries, each representing an order.
+
+### Function: `parse_order_file(file_path)`
+**Signature**
+`def parse_order_file(file_path):`
+
+**Parameters**
+- **file_path:** A `str` - the path to the `.txt` file that contains order information.
+
+**Returns**
+- **List of dictionaries** if parsing successful.
+   ```
+   [
+      {"order-no": "ORD001", "cert-id": "001"},
+      {"order-no": "ORD002", "cert-id": "002"},
+   ]
+   ```
+- **Empty string** ("") if the file is missing or can't be parsed.
+
+### Input File Format
+Each line in the file should follow this structure:
+```
+order-no: ORD001, cert-id: 001
+order-no: ORD002, cert-id: 002
+```
+### How It Works
+1. Reads all lines from the given file.
+2. Splits each line into key-value pairs using `split(',')` and `split(': ',1)`.
+3. Builds a dictionary for each line.
+4. Appends each dictionary to a list, which gets returned.
+
+### Example Usage
+```
+orders = parse_order_file("/home/user/order.txt")
+print(orders)
+```
+
+### Limitations & Improvements
+- No validation on malformed lines or missing keys.
+- Consider trimming whitespace or handling mssing `:` more robustly.
+- Not safe for large files - could benefit from streaming or line-by-line yield.
+- Error message is generic - could provide more specific exception details.
+
+## **GPIO Reboot Controller - `RebootPinS3`**
+### Overview
+This component controls the **hardware reboot** of an ESP32-S3 board by toggling a specified **GPIO** pin on a **Raspberry Pi**. It's designed for factory tools or testing environments where rebooting the device through hardware is needed.
+
+### Class: `RebootPinS3`
+**Constructor**
+
+`def __init__(self, gpio_pin=18):`
+
+**Parameters**
+- `gpio_pin` (int): GPIO pin number in **BCM mode** used for rebooting the ESP32-S3. Default is **GPIO 18**.
+
+### Methods
+1. `set_pin_high()`
+Sets the GPIO pin to HIGH. 
+   ```
+   reboot_pin.set_pin_high()
+   ```
+2. `set_pin_low()`
+Sets the GPIO pin to LOW.
+   ```
+   reboot_pin.set_pin_low()
+   ```
+3. `reboot_esp32()`
+Performs a hardware reboot by toggling the pin:
+   - HIGH
+   - Wait 1 second
+   - LOW
+   - Wait 1 second
+   - HIGH
+
+   ```
+   reboot_pin.reboot_esp32()
+   ```
+4. `cleanup()`
+Cleans up the GPIO state after use.
+   ```
+   reboot_pin.cleanup()
+   ```
+
+### Notes
+- **BCM Pin Mode**: Make sure you're using BCM pin numbers (`GPIO.setmode(GPIO.BCM)`).
+- **GPIO Cleanup** is critical to prevent conflicts on repeated runs.
+- You **must run this with root privileges** (e.g., `sudo`) to control GPIO on Raspberry Pi.
+
+### Improvement Ideas
+- Add configurable timing (e.g., reboot delay).
+- Add status feedback to confirm pin toggling.
+- Wrap in a try-finally block to ensure cleanup happens even on crash.
+
+## **Serial Communication `serialCom`**
+### Overview
+The `SerialCom` class handles serial communication between the Python application and a connected device (e.g., ESP32 or similar embedded hardware). It reads, processes, and acts on various serial messages in real time. The class is designed to support a test or factory tool GUI with multiple status labels for test feedback. 
+
+Key features include:
+- Opening and closing serial ports.
+- Background thread for real-time serial data reading.
+- Decoding and parsing different device responses (e.g., MAC, FW, product name, sensor data).
+- Updating GUI labels based on test results.
+- Handling factory mode logic.
+
+### Purpose
+The class is used to:
+- Establish and manage a serial connection with a device under test (DUT).
+- Read and interpret serial data to validate device status, configurations, and sensor readings.
+- Automatically trigger actions like sending commands when a certain device state is detected.
+- Provide live test results in the GUI using 25 individual status labels.
+
+This class plays a critical role in the automated test workflow within a factory or engineering setup.
+
+### Notes
+- **Status Labels**: The constructor accepts 25 GUI labels to reflect different test statuses. This tight coupling with the GUI could make unit testing harder.
+- **Global Variables**: 
+   - `device_factory_mode`, `factory_mode_counter`, `abnormal_dot_counter`, `exit_read_thread` are **global**, which isn't ideal. Consider encapsulating these into instance variables or a state manager.
+- **Thread Safety**: Although it uses threading for reading serial data, there's no locking around shared state. Race conditions could occur.
+- **Exception Handling**: It gracefully handles `SerialException`, `UnicodeDecodeError`, and generic `Exception` during reads.
+- **Hardcoded String Matching**: Parsing is done using fixed strings (e.g., `"3;MAC? = "`), which could break if the firmware format changes.
+- **Temporary Blocks**: Some code (like DB updates) is commented out - may need a cleanup or condition toggle.
+
+### Improvement Ideas
+*   **Encapsulate Globals**: Move all global flags and counters into instance variables or a configuration/state management class.
+    
+*   **Reduce Label Bloat**: Instead of passing 25 label objects, use a dictionary (`self.status_labels = {1: status_label1, ..., 25: status_label25}`) or a list to make handling dynamic and cleaner.
+    
+*   **Use Regex for Parsing**: Switch from hardcoded string matching to regular expressions for more robust data parsing.
+    
+*   **Thread Safety**: Use a `Lock` around any shared mutable state accessed by multiple threads.
+    
+*   **Unit Tests**: Separate parsing logic (e.g., `process_mac_address`) into pure functions so they can be easily unit-tested.
+    
+*   **Command Mapping**: Create a dictionary that maps keywords to handler functions to avoid long `if` chains.
+    
+*   **Structured Logging**: Use structured logs (e.g., JSON format or custom tags) for easier log parsing and analysis.
+    
+*   **Timeout/Watchdog**: Add a watchdog mechanism to detect if the device hangs or stops responding.
+    
+*   **Auto-Reconnect**: Implement auto-reconnect logic if the serial connection is lost.
+    
+*   **Debounce Repetitive Messages**: Implement logic to filter or debounce repeating messages that don't provide new info.
+
+## **Servo Controller `servoControl.py`**
+### Overview
+The `ServoController` class provides a simple interface for controlling a servo motor via the Raspberry Pi's GPIO pin using PWM (Pulse Width Modulation). It is designed to drive standard servo motors by translating a desired angle (0°–180°) into an appropriate PWM duty cycle.
+
+### Purpose
+This class is intended for controlling a servo motor on a Raspberry Pi. Typical use cases include:
+*   Mechanically actuating a latch, arm, or lever
+    
+*   Setting a position in robotics or automation systems
+    
+*   Providing physical feedback or actuation in test rigs
+    
+It abstracts away low-level GPIO operations and allows users to control the servo using intuitive angles.
+
+### Notes
+*   **GPIO Pin**: Uses GPIO pin 12 (BCM numbering) for PWM output.
+    
+*   **PWM Frequency**: The PWM is set to 50Hz, which is standard for most hobby servos.
+    
+*   **Angle to Duty Cycle Mapping**: The formula used is:
+    ```
+    duty = 2 + ((angle / 180) * 10)
+    ```
+*   This maps 0° to ~2% and 180° to ~12% duty cycle, which fits typical servo control specs.
+    
+*   **No Input Validation**: There's no clamping or checking to prevent sending out-of-range angles (e.g., -10°, 200°).
+    
+*   **GPIO Cleanup**: The `stop()` method correctly stops PWM and cleans up GPIO to prevent conflicts or warnings.
+
+### Improvement Ideas
+- **Add Angle Validation**: Clamp `angle` between 0 and 180 to prevent invalid values from being sent to the servo:
+   ```
+   angle = max(0, min(180, angle))
+   ```
+- **Customizable Pin**: Let users specify the GPIO pin and frequency in `__init__()` instead of hardcoding:
+   ```
+   def __init__(self, pin=12, frequency=50):
+   ```
+- **Exception Handling**: Add basic exception handling in case GPIO fails to initialize or PWM throws an error.
+- **Context Manager Support**: Make the class a context manager so it can automatically clean up:
+   ```
+   def __enter__(self): return self
+   def __exit__(self, *args): self.stop()
+   ```
+*   **Verbose Mode/Logging**: Add a logging option to debug or trace servo movements.
+    
+*   **Dynamic Calibration**: Allow user to define the min/max duty cycle for better tuning across different servo models.
+
+## **Setting Window `settingWindow.py`**
+### Overview
+The `SettingApp` class defines a Tkinter-based GUI for configuring and saving firmware-related address settings to a `config.ini` file. It allows users to input memory addresses for various components such as bootloader, firmware, and certificates, then persist those settings in a standard INI format.
+
+### Purpose
+This GUI tool is used to:
+*   Provide a user-friendly interface to configure memory addresses for flashing operations.
+    
+*   Save those configurations to a local `config.ini` file, which other components in the flashing tool can read and use.
+    
+*   Ensure configuration is persistent across sessions and easily editable.
+
+### Notes
+*   **UI Elements**:
+    *   Creates labels and text entry fields for six address-related parameters: Bootloader, Partition Table, OTA Data Initial, Firmware, Matter Cert, and AWS Cert.
+        
+    *   Includes a "Save" button to write the entries to a `config.ini` file.
+        
+    *   Displays a status label indicating whether the save operation was successful.
+        
+*   **INI File Handling**:
+    *   Uses Python’s `configparser` to manage INI file content.
+        
+    *   Writes all entries to the `[Settings]` section of `config.ini`.
+        
+    *   If the file already exists, it updates the section; otherwise, it creates a new one.
+        
+*   **Path**: Assumes the `config.ini` file is located in the current working directory.
+    
+*   **No Input Validation**: There’s currently no checking for empty fields or invalid input (e.g., non-hex address formats).
+
+### Improvement Ideas
+**Input Validation**: Add checks to ensure each entry is in a valid format (e.g. hex, not blank).
+   ```
+   if not value.startswith("0x"):
+    show_error("Address must start with 0x")
+   ```
+*   **Default Values**: Preload entries with current config values if `config.ini` already exists to support editing instead of starting blank each time.
+    
+*   **Dynamic Sections**: Support multiple profiles or sections beyond `[Settings]` for advanced configurations.
+    
+*   **Error Handling**: Add try/except blocks around file operations and parsing to handle IO errors gracefully.
+    
+*   **Confirmation Dialogs**: Use a pop-up message box for success/failure notifications instead of only the label.
+    
+*   **Use `ttk` for Modern UI**: Upgrade from `tk` to `ttk` widgets for cleaner visuals and better cross-platform appearance.
+    
+*   **Make Window Resizable/Responsive**: Currently the window size is fixed and not user-resizable, which might be annoying if labels or entries overflow.
+
+## **Tools Bar `toolsbar.py`**
+### Overview
+`toolsbar.py` defines the `ToolsBar` class — a backend utility handler that provides functions for:
+*   Verifying if `esptool.py` is installed.
+    
+*   Fetching device info from a local REST API.
+    
+*   Creating and populating a MySQL database with the fetched data.
+    
+*   Writing that data to a `.txt` file.
+    
+*   Displaying the data in logs.
+
+### Purpose
+The component serves as an automation utility in a firmware flashing tool by:
+*   Validating tooling availability (`esptool.py`).
+    
+*   Integrating with a local server (e.g., Express backend on `localhost:3000`) to fetch device records.
+    
+*   Ensuring records are inserted into a structured MySQL database.
+    
+*   Persisting device data to a text file for traceability/logging.
+    
+*   Outputting all received data to the logger for easy debugging.
+
+### Notes
+**Functions:**
+#### `flash_tool_checking()`
+
+*   Runs `esptool.py --help` to ensure `esptool.py` is installed and executable.
+    
+*   Logs success or errors.
+    
+
+#### `download_list()`
+
+*   Pulls JSON data from `http://localhost:3000/devices`.
+    
+*   Calls helper methods to:
+    *   Ensure the DB table exists.
+        
+    *   Insert data.
+        
+    *   Write data to a `.txt` file.
+        
+    *   Log each record.
+        
+
+#### `create_table_if_not_exists()`
+
+*   Connects to MySQL DB `device_mac_sn` using hardcoded credentials.
+    
+*   Creates a `device_info` table with necessary fields if not already present.
+    
+
+#### `insert_data(data)`
+
+*   Inserts each record from the JSON list into the `device_info` table.
+    
+*   Expected keys: `matter_cert_id`, `serial_no`, `mac_address`, `matter_qr_string`, `status`.
+    
+
+#### `write_to_text_file(data)`
+
+*   Writes structured info into `device_data.txt` located two levels up from script’s location.
+    
+*   Extracts keys like `order-no`, `mac-address`, `serial-id`, `cert-id`, etc.
+    
+
+#### `display_data(data)`
+
+*   Outputs each record’s info using `logger.info()` for visibility/debugging.
+
+### Improvement Ideas
+*   **Security**
+    *   **DO NOT** hardcode DB credentials — read them from a `.env` file or a secure config.
+        
+    *   Mask sensitive logs (like passwords or MAC addresses if needed).
+        
+*   **Code Cleanup**
+    *   Refactor repetitive code (DB connection logic, file writing) into helper methods.
+        
+    *   Remove commented-out legacy sections.
+        
+*   **Robustness**
+    *   Add retry logic for failed HTTP or DB connections.
+        
+    *   Validate the JSON structure before using `.get()` to avoid unexpected formats.
+        
+*   **Unit Testing**
+    *   Break out and test each method with mock inputs.
+        
+    *   Especially `insert_data()` and `write_to_text_file()` for proper data integrity.
+        
+*   **Portability**
+    *   Replace static URL (`http://localhost:3000/devices`) with a configurable option.
+
+### Dependencies
+*   `subprocess` for CLI command execution.
+    
+*   `requests` for HTTP requests.
+    
+*   `mysql.connector` for DB interaction.
+    
+*   `os` and `logging` for filesystem and logs.
+
+## **Update To Database `updateDB.py`**
+### Overview
+`updateDB.py` contains the `UpdateDB` class, which is responsible for:
+- Updating the MAC address and device status in **MySQL database**.
+- Updating the MAC address in a **local text file** (`device_data.txt`).
+
+This is used to track which devices have been flashed with which MAC addresses, and to ensure data consistency between the DB and log file.
+
+### Purpose
+- `update_database(mac_address)`
+   Updates the first unused entry in the `device_info` table (`status=0`) with the new MAC address and marks it as used (`status=1`).
+- `update_text_file(mac_address)`
+   Modifies the first unused line in the `device_data.txt` file by replacing its MAC address field with the new value.
+
+### Notes
+*   Uses **MySQL Connector** to interact with the database.
+    
+*   Locates the `device_data.txt` file using a path relative to the script location.
+    
+*   Uses logging throughout the code for debugging and traceability.
+    
+*   Only updates the **first** available (unused) row in both the database and file, although the file logic doesn't fully reflect that yet.
+    
+*   Contains commented-out and redundant error handling code, which should be cleaned.
+
+### Improvement Ideas
+| Area | Issue | Suggestion |
+| --- | --- | --- |
+| **SQL query** | Updates all rows with `status = 0` | Add `ORDER BY id ASC LIMIT 1` to safely update one row |
+| **Text file update** | Doesn’t actually append updated line | Re-enable `updated_lines.append(updated_line)` and add `\n` manually |
+| **Logic flow** | May update multiple lines if they contain `'mac-address:'` | Add `found = True` + `break` after the first update |
+| **Error handling** | Duplicate `except IOError` blocks | Remove one of them to clean up the logic |
+| **Status field in file** | Not updating `Status: 0` → `Status: 1` | Uncomment and handle it like the MAC update |
+| **Logging** | Logs are minimal in the file section | Add more context (e.g., which line was updated) |
+
+## **Uploading Report `uploadReport.py`**
+### Overview
+`uploadReport.py` defines **a single function** called `post_report()` that is intended to send data to an **API** using an HTTP POST request.
+
+However, this component is currently not used anywhere in the codebase.
+
+### Purpose
+`post_report(api_url, data, headers=None)`
+- Post JSON data to the specified API endpoint using the `requests` library.
+- Handles exceptions and logs both success and failure cases.
+- Returns the response object on success or `None` if an error occurs.
+
+### Notes
+- Uses Python's built-in `logging` for structured output.
+- Uses `raise_for_status()` to catch HTTP errors automatically.
+- Accepts custom headers, but they're optional - defaults to `None`.
+
+This is a pretty standard wrapper around `requests.post()` with logging and exeption handling.
+
+### Improvement Ideas
+| Area | Issue | Suggestion |
+| --- | --- | --- |
+| **Usage** | Currently unused | Either remove the file or wire it into a real reporting flow (e.g., after firmware flash, test results, etc.) |
+| **Error Handling** | Uses `print()` alongside `logger.error()` | Ditch `print()` — use logging only for consistency |
+| **Testability** | No retry or timeout handling | Add timeout and optional retry mechanism for robustness |
+| **Return Value** | Returns `None` on error | Consider returning an error structure or message instead for better debugging from calling code |
+
+## **Wifi Driver `wifiDriver.py`**
+### Overview
+`wifiDriver.py` is a **standalone utility script** for scanning Wi-Fi networks and checking signal strength (RSSI) using Linux commands like `iwlist` and `iwconfig`. It can fallback to a secondary interface if the default fails.
+
+### Purpose
+1. `scan_wifi_networks(interface='wlan0', fallback_interface='wlp44s0')`
+    - Uses `iwlist scan` to list available Wi-Fi SSIDs and their signal strength.
+2. `run_iwconfig(interface=`wlan0')`
+    - Uses `iwconfig` to get the current Wi-Fi network and its signal level.
+3. Script behavior under `if __name__ == "__main__"`
+    - Scans for Wi-Fi, looks for a specific SSID at (`AT-MT:Y1CA00O6148F--405J10`),and checks if its RSSI is within a usable range (`-30` to `-110` dBm).
+
+### Notes
+*   Hardcoded SSID in the main block is specific to your factory test environment.
+    
+*   Uses `subprocess` to call system utilities — no dependencies outside the Python standard library.
+    
+*   Fallback interface improves resilience in dual-interface setups.
+
+### Improvement Ideas
+| Area | Issue | Suggestion |
+| --- | --- | --- |
+| **Hardcoding** | Hardcoded SSID in the main block | Move target SSID to a config or pass as CLI arg/env var |
+| **Logging** | Uses `print()` for debugging/errors | Replace all `print()` with `logging` for consistency and better control |
+| **Fallback Interface** | Could recurse infinitely if fallback also fails | Add a limit to prevent potential infinite fallback |
+| **Parsing Fragility** | Regex parsing of CLI output is brittle | Consider switching to `iw dev wlan0 scan` (more modern) or using `pyroute2` for more structured parsing |
+| **Error Handling** | Doesn't catch `FileNotFoundError` if `iwlist` or `iwconfig` is missing | Add specific exception for missing commands |
+| **Unit Testing** | Not testable in current form | Break into smaller testable units, mock subprocess calls in tests |
+
+## **Write Device Information `writeDeviceInfo.py`**
+### Overview
+`writeDeviceInfo.py` is a Python class component used to manage device information transmission over a serial connection in a GUI-based factory application. It handles sending commands like product names, serial numbers (SRN), and Matter QR (MTQR) data to connected devices. It also updates the statuses of each step in a local text file (`device_data.txt`) to track progress through predefined states (Status: 1 → 2 → 3).
+
+### Purpose
+The main purpose of this module is to:
+*   Send structured commands to a device via a serial interface.
+    
+*   Read serial numbers and MTQR strings from a local text file based on specific status markers.
+    
+*   Mark those entries as "used" by updating their status in the file.
+    
+*   Update the UI to reflect the success/failure of each operation through provided status labels.
+
+### Notes
+*   The script is tightly coupled with the `device_data.txt` structure and assumes it contains lines with fields like `serial-id:` and `qrcode:`, each ending with a `Status:` marker.
+    
+*   The `send_command()` function is expected to interface with the device, probably via UART.
+    
+*   Multiple lines of code are commented out, indicating ongoing development or debugging.
+    
+*   The script assumes consistent file access — it will break silently if the file format changes or permissions are wrong.
+    
+*   `status_label1` and `status_label2` are likely `tkinter.Label` widgets (or similar), suggesting the script is part of a GUI workflow.
+
+### Improvement Ideas
+| **Category** | **Improvement** | **Description** |
+| --- | --- | --- |
+| **Code Structure** | Separate file I/O logic | Create a dedicated class or module to handle reading and writing `device_data.txt`. |
+|  | Remove redundant file operations | Abstract repeated open/read/write blocks into reusable functions. |
+|  | Fix duplicate function definition | `send_serial_number_command()` is defined twice—keep one and clean up. |
+| **Maintainability** | Use constants or config file | Extract hardcoded strings (e.g., `"serial-id:"`, `"Status: 1"`) and file paths into constants. |
+|  | Clear commented-out code | Remove or label with `# TODO:` to reduce confusion. |
+| **Error Handling** | Handle file access errors more gracefully | Display user-facing errors (e.g., pop-ups or GUI label updates) when file operations fail. |
+|  | Validate file content format | Add checks for malformed lines or missing keys like `serial-id` or `qrcode`. |
+| **User Experience** | Improve GUI feedback | Show real-time status/logs in the GUI, not just via `logger`. |
+|  | Disable UI elements during operations | Prevent double sending or multiple clicks while commands are running. |
+| **Testing** | Add unit tests for file functions | Mock the text file and test `get_serial_number_from_text_file()` and others under various scenarios. |
+| **Readability** | Add inline comments and docstrings | Help future devs understand what each method is doing at a glance. |
