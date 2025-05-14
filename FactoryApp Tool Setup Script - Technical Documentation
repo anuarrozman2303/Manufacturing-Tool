@@ -1,0 +1,444 @@
+# **Individual Setup Script**
+## List of scripts available
+```
+|-- setup_i2c.sh
+|-- setup_internet.sh
+|-- setup_kiosk.sh
+|-- setup_prereq.sh
+|-- setup_tailscale_zerotier.sh
+|-- setup_wifi.sh
+|-- setup_xrdp.sh
+```
+
+## **I2C Setup Script `setup_i2c.sh`**
+### Overview
+This bash script configures a Raspberry Pi to enable I2C functionality. It does so by:
+*   Modifying `/boot/config.txt` to enable the `i2c_arm` interface.
+    
+*   Ensuring the `i2c-dev` kernel module is loaded at boot.
+    
+*   Rebooting the system to apply the changes.
+
+### Purpose
+To automate the process of enabling I2C on a Raspberry Pi. This is useful for developers working with I2C peripherals like sensors, displays, and microncontrollers.
+
+### Notes
+*   This script requires `sudo` privileges to modify system files and trigger a reboot.
+    
+*   Should be executed on a Raspberry Pi running Raspberry Pi OS (or similar Debian-based distros).
+    
+*   The script will force a system reboot at the end—ensure no critical processes are running before execution.
+    
+*   Adding entries without checking existing duplicates may result in redundant lines if someone partially edited config files before.
+
+### Improvement Ideas
+| **Category** | **Improvement** | **Description** |
+| --- | --- | --- |
+| **Idempotency** | Avoid duplicate entries in `/boot/config.txt` or `/etc/modules` | Use `sed` or smarter logic to edit the file without appending duplicates. |
+| **User Interaction** | Add confirmation prompt before reboot | Prevent accidental system reboot without user consent. |
+| **Robustness** | Validate sudo access early | Check `EUID` or attempt a safe sudo command first before continuing. |
+|  | Backup config files | Automatically create backups like `config.txt.bak` before making changes. |
+| **Logging** | Add timestamped logs or log to file | Useful for debugging or automated setups. |
+| **Modularity** | Convert into a function-based script or modular tool | Easier to integrate into larger provisioning scripts or systems. |
+| **Portability** | Check platform before running | Warn or exit if the script is not running on a Raspberry Pi. |
+| **Security** | Avoid piping `echo` into `sudo tee` blindly | Prefer appending with privileges safely using `sudo sh -c 'echo ... >> file'`. |
+
+## **Internet Setup (IP Forwarding and NAT) `setup_internet.sh`**
+### Overview
+This bash script configures a Raspberry Pi (or any Linux box) to:
+*   Enable IP forwarding.
+    
+*   Set up NAT using `iptables` for internet sharing.
+    
+*   Make the iptables rules persistent across reboots.
+    
+*   Restart network-related services like `dnsmasq` and `hostapd`.
+
+### Purpose
+To allow a Raspberry Pi to share its internet connection - useful for creating a Wi-Fi access point or routing network traffic through the Pi (e.g., for captive portals, offline local networks, or as a simple router).
+
+### Notes
+*   Replace `eth0` with the actual internet-facing interface if it's different (like `wlan0` or `usb0`).
+    
+*   Assumes `rc.local` is being used and executed at boot (some modern systems use `systemd` which may ignore `rc.local` if it’s not properly configured).
+    
+*   Requires root privileges (`sudo`) for system changes and service restarts.
+    
+*   `iptables-save` and `iptables-restore` must be installed and functional.
+    
+*   `dnsmasq` and `hostapd` should already be configured and installed.
+
+### Improvement Ideas
+| **Category** | **Improvement** | **Description** |
+| --- | --- | --- |
+| **Idempotency** | Check if `iptables` rule already exists | Prevents duplicate rules every time the script runs. |
+| **Interface Detection** | Auto-detect internet-facing interface | Avoids hardcoding `eth0`; use `ip route` or `nmcli` to detect it. |
+| **Systemd Compatibility** | Use `iptables-persistent` or create a systemd service instead of relying on `rc.local` | `rc.local` is deprecated in some distros; `iptables-persistent` is the modern way. |
+| **Validation** | Check if required services (`dnsmasq`, `hostapd`) are installed | Give clearer error messages if missing. |
+| **Logging** | Add logs to a file or use `logger` | Useful for debugging or auditing configurations. |
+| **Safety** | Backup `/etc/sysctl.conf` and `/etc/rc.local` before editing | Makes rollback easy if something goes wrong. |
+| **Network Restart** | Use `netplan` or `nmcli` where applicable | Depending on the distro/version, `systemctl restart networking` might not work. |
+
+## **Kiosk Mode Setup `setup_kiosk.sh`**
+### Overview
+This bash script enables or disables **kiosk mode** for a user (`airdroitech`) on a Raspberry Pi (or similar Linux system running LightDM). It:
+*   Installs required dependencies (`unclutter`, `lxterminal`).
+    
+*   Sets up automatic login via LightDM.
+    
+*   Creates a script to launch a Python GUI app in kiosk mode.
+    
+*   Adds the script to autostart.
+    
+*   Optionally disables kiosk mode via argument (`disable`).
+
+### Purpose
+To automate the process of turning a Raspberry Pi into a **single-purpose kiosk device**, such as for a factory interface, monitoring screen, or digital display, where a Python GUI app launches automatically without exposing the desktop or requiring login.
+
+### Notes
+*   **LightDM** must be the default display manager.
+    
+*   The application path (`/usr/src/app/.../main.py`) must exist and be executable.
+    
+*   Assumes `lxterminal` and `unclutter` are suitable for your window manager/environment (LXDE, Xfce, etc.).
+    
+*   Makes permanent changes to `/etc/lightdm/lightdm.conf`.
+    
+*   Requires `sudo` for full functionality.
+
+### Improvement Ideas
+| **Category** | **Improvement** | **Description** |
+| --- | --- | --- |
+| **Robustness** | Add checks to verify if LightDM is installed and running | Prevents failures on systems using GDM, SDDM, or Wayland-based setups. |
+| **Idempotency** | Avoid appending duplicate lines in `lightdm.conf` or desktop files | Prevents config bloat if the script is run multiple times. |
+| **Config safety** | Backup LightDM config with a timestamp | Avoids overwriting previous backups. |
+| **Flexibility** | Allow app path to be passed as an argument or read from a config file | Useful for reusability across projects. |
+| **Logging** | Add logging to `/var/log/kiosk-setup.log` or similar | Helps in debugging and keeping track of setup progress. |
+| **Error handling** | Gracefully exit if key directories or files don’t exist | Currently assumes everything is in place and may crash if it's not. |
+| **Compatibility** | Detect window manager/environment and use compatible terminal apps | Not all systems have `lxterminal`; fallback to `xterm`, `gnome-terminal`, etc. |
+| **Security** | Restrict the script's permissions (e.g., 700) | Prevent tampering, especially if deployed on shared systems. |
+| **Reboot Prompt** | Add `read -p "Reboot now? [Y/n]"` instead of immediate reboot | Gives the user control before restarting the system. |
+
+## **Setting Up Prereq `setup_prereq.sh`**
+### Overview
+This script automates the setup process for the Factory App on a Raspberry Pi 4. It configures directory permissions, sets up Python dependencies, clones the application repository, applies folder access policies, and adds a cron job to run a startup script.
+
+### Purpose
+To streamline the installation and configuration of the Factory App by:
+*   Ensuring proper permissions for the working directory.
+    
+*   Installing necessary Python packages.
+    
+*   Cloning the latest application repository.
+    
+*   Making the result directory universally accessible.
+    
+*   Automating background setup via a cron job.
+    
+*   Launching the app automatically.
+
+### Notes
+*   Assumes the user is `airdroitech`.
+    
+*   Replaces any previous `FactoryApp` directory with `ATSoftwareDevelopmentTool`.
+    
+*   Grants full access (777) to the `result` folder to avoid permission issues.
+    
+*   Uses `break-system-packages=true` to bypass pip restrictions on Debian-based systems.
+    
+*   Adds a cron job to run `update_ssid.sh` at boot.
+
+### Improvement Ideas
+| ⚠️ Problem Area | 💥 Issue | 💡 Suggested Fix |
+| --- | --- | --- |
+| `sudo pip install` used | Can break system Python if misused | Use a virtual environment or `pipx` for isolation |
+| Hardcoded user (`airdroitech`) | Not reusable for other users | Replace with dynamic `$(whoami)` or parameterize |
+| Global `chmod 777` on result dir | Major security risk | Use group-based permissions (`chgrp`, `chmod 775`, `setgid`) |
+| `rm -rf FactoryApp` | Risky deletion | Add check or prompt before deleting |
+| Uses `git@github.com` | Requires SSH key setup | Fallback to HTTPS or document key setup step |
+| Reboots without prompt | Could interrupt running processes | Ask for confirmation before rebooting |
+
+## **Setting Up Samba `setup_samba.sh`**
+### Overview
+This script configures a Samba network share on a Raspberry Pi. It installs Samba, sets up a shared folder for Windows access, configures permissions, and adds a Samba user.
+
+### Purpose
+To enable Windows or other networked devices to access the Raspberry Pi's shared folder located at:
+```
+/usr/src/app/ATSoftwareDevelopmentTool/FlashingTool/components/sendToPrinter/result
+```
+
+### Notes
+*   The shared folder is accessible without a password (`guest ok = yes`), but a Samba user is still added.
+    
+*   `create mask` and `directory mask` are set to `0777` for maximum read/write access.
+    
+*   Appends new configuration to the bottom of `/etc/samba/smb.conf`.
+    
+*   The Samba username is hardcoded as `airdroitech`.
+
+### Improvement Ideas
+| ⚠️ Problem Area | 💥 Issue | 💡 Suggested Fix |
+| --- | --- | --- |
+| Appending directly to `smb.conf` | Can result in duplicate or conflicting shares | Add checks or remove existing `[SharedFolder]` block before appending |
+| `guest ok = yes` + `0777` perms | Serious security hole, full open access | Consider setting `guest ok = no` and using authenticated access only |
+| Hardcoded username | Not portable | Use `$(whoami)` or accept as a parameter |
+| No backup of `smb.conf` | Risk of misconfiguration | Add `cp $SAMBA_CONF $SAMBA_CONF.bak` before changes |
+| Unconditional user addition | Might prompt errors if user already exists | Check user existence first with `pdbedit -L` |
+
+## **Setting Up Tailscale & Zerotier `setup_tailscale_zerotier.sh`**
+### Overview
+This script sets up remote networking on a Raspberry Pi using **Tailscale** and **Zerotier**. It handles installation, network joining, and provides connectivity status and IP info.
+
+### Purpose
+To allow remote access (e.g. via SSH) to the Raspberry Pi over private, encrypted mesh networks using either:
+*   **Tailscale** (WireGuard-based)
+    
+*   **Zerotier** (SD-WAN-based)
+
+### Notes
+*   `tailscale up` requires user login and manual browser-based authentication unless configured with auth keys.
+    
+*   Zerotier network ID is currently hardcoded as `272f5eae166d12a9` despite prompting user input.
+    
+*   IP info relies on CLI output parsing (`ifconfig`, `grep`) which can be brittle.
+
+### Improvement Ideas
+| ⚠️ Problem Area | 💥 Issue | 💡 Suggested Fix |
+| --- | --- | --- |
+| Hardcoded Zerotier Network ID | Ignores user input | Replace with `sudo zerotier-cli join $NETWORK_ID` |
+| No install checks | Reinstalls even if already installed | Add conditionals to skip if installed (e.g., `which tailscale`) |
+| IP display not reliable | Grep might miss actual IP lines | Use `tailscale ip` and `zerotier-cli listnetworks` for structured output |
+| No error handling | Assumes everything goes well | Add checks after each command (e.g., `if [ $? -ne 0 ]; then echo "Error..."; exit 1; fi`) |
+| Interactive prompts | Bad for headless/kiosk automation | Support headless install with env vars or pre-filled auth tokens |
+| No daemon enablement | Services might not auto-start | Ensure `tailscaled` and `zerotier-one` are enabled and started via `systemctl` |
+
+## **Setting Up Wi-Fi `setup_wifi.sh`**
+### Overview
+This script configures a Raspberry Pi to act as a **Wi-Fi hotspot (SoftAP)** using `hostapd` and `dnsmasq`. It assigns a **random static IP** in the `192.168.5.x` subnet and sets up DHCP and an open wireless SSID based on the device's MAC address.
+
+### Purpose
+To allow other devices to connect directly to the Raspberry Pi's Wi-Fi interface (`wlan0`) for scenarios like headless setup, IoT configuration, or local networking.
+
+### Notes
+*   Generates a random static IP for `wlan0` in the `192.168.5.x` range.
+    
+*   Disables `wpa_supplicant` and assigns static IP config via `/etc/network/interfaces`.
+    
+*   Sets up a unique SSID: `AirTouch_Pi_WiFi_<last_6_MAC_digits>`.
+    
+*   No Wi-Fi password is set — **network is open by default** (⚠️ insecure).
+    
+*   `rc.local` is edited to make sure Wi-Fi is unblocked and brought up at boot.
+
+### Improvement Ideas
+| ⚠️ Problem Area | 💥 Issue | 💡 Suggested Fix |
+| --- | --- | --- |
+| **Open Wi-Fi network** | Anyone nearby can connect | Uncomment and populate WPA settings in `hostapd.conf` |
+| **Random IP may conflict** | Could pick IP already in DHCP range | Use a fixed IP (e.g. `192.168.5.1`) or exclude `.1` from DHCP pool |
+| **Uses `/etc/network/interfaces`** | Deprecated in favor of `dhcpcd.conf` or `netplan` | Stick to `dhcpcd.conf` unless really needed |
+| **Uses `ifconfig`** | Legacy tool, replaced by `ip` | Prefer `ip addr` and `ip link` |
+| **Editing `rc.local`** | Obsolete on many systems | Use a systemd service for boot-time commands |
+| **No interface checks** | Fails silently if `wlan0` doesn't exist | Check with `ip link show wlan0 |
+| **No MAC spoofing fallback** | MAC parsing might fail on some interfaces | Add check to fallback to a default SSID if needed |
+| **Mixed network manager usage** | Might clash with NetworkManager or dhcpcd | Ensure other services don’t override settings |
+
+## **Setting Up XRDP `setup_xrdp.sh`**
+### Overview
+This script installs and configures **XRDP**, allowing you to **remotely access the Raspberry Pi desktop** over RDP (Remote Desktop Protocol). Perfect for Windows users who want to connect to the Pi without using SSH or VNC.
+
+### Purpose
+To set up XRDP for remote GUI access so you can control the Raspberry Pi from another machine using an RDP client (e.g., Windows Remote Desktop Connection).
+
+### Breakdown
+| Function | Purpose |
+| --- | --- |
+| `update_packages()` | Updates APT package list to ensure latest versions are pulled |
+| `install_xrdp()` | Installs XRDP via APT |
+| `start_enable_xrdp()` | Enables XRDP to launch at boot and starts it immediately |
+| `check_xrdp_status()` | Prints current XRDP service status for confirmation |
+
+### Notes
+*   Installs XRDP using the default Raspberry Pi OS package manager (APT).
+    
+*   Sets the service to autostart at boot.
+    
+*   Works out of the box for **Raspberry Pi OS with Desktop** (not headless versions).
+
+### Improvement Ideas
+| ⚠️ Issue | 💥 Description | 💡 Fix |
+| --- | --- | --- |
+| **Blank screen after login** | Common issue with Raspbian + XRDP | Install a desktop environment like `lxsession` and make sure `.xsession` is set correctly |
+| **Audio won’t work** | XRDP doesn’t support Pi audio out of the box | Consider PulseAudio modules if needed |
+| **Different resolution** | RDP sessions may default to weird resolutions | Set default screen size in `/boot/config.txt` or use xrandr scripts |
+| **User permission issues** | Some services might require GUI access (e.g., GPIO) | Add user to relevant groups if needed (`gpio`, `i2c`, etc.) |
+
+### Tip
+If you ever get a **"authentication is required to create a color managed device"** popup on login, it's safe to ignore or disable the color management service via:
+```
+sudo systemctl disable colord.service
+```
+
+
+
+
+# **Combined Setup Script**
+## List of scripts available
+```
+|-- setup_kiosk.sh
+|-- setup_network.sh
+|-- setup_raspberry_pi.sh
+```
+
+## **Kiosk Mode Configuration Script `setup_kiosk.sh`**
+### Overview
+This script **enables or disables kiosk mode** for the existing user `airdroitech` on a Raspberry Pi. It configures LightDM for autologin and sets up a Python app to launch in fullscreen (or terminal) at boot—ideal for embedded systems or factory tools.
+
+### Purpose
+To automate the setup of a **kiosk environment**:
+*   Autologin without prompt
+    
+*   Launches a Python app on boot
+    
+*   Hides the mouse cursor
+    
+*   Disables screen blanking
+    
+*   Allows toggling kiosk mode on/off with a flag
+
+### Breakdown
+📦 Dependencies
+
+Installs these packages if missing:
+*   `unclutter`: hides the mouse cursor after idle time
+    
+*   `lxterminal`: used to launch the Python app in terminal
+
+🔧 configure_kiosk()
+| Step | Action |
+| --- | --- |
+| 🔒 Backup | Backs up `/etc/lightdm/lightdm.conf` |
+| 👤 Autologin | Adds `autologin-user=airdroitech` and sets timeout to `0` |
+| 🚀 Kiosk Script | Creates `/home/airdroitech/kiosk.sh` that: Disables screen blankingHides the cursorLaunches the Python app via `lxterminal` |
+| 🧷 Autostart | Adds `.desktop` entry in `~/.config/autostart` to launch kiosk script |
+| 🔁 Reboot | Reboots the Pi to activate changes |
+
+❌ disable_kiosk()
+| Step | Action |
+| --- | --- |
+| 🔄 Removes autologin | Deletes `autologin-user` lines in `lightdm.conf` |
+| 🗑️ Cleanup | Deletes kiosk script and autostart `.desktop` entry |
+| 💡 Note | Prompts user to reboot manually |
+
+### Improvement Ideas
+| ⚠️ Problem | 💥 Description | 💡 Fix |
+| --- | --- | --- |
+| `lxterminal` not found | GUI might not launch | Make sure `lxterminal` is installed (script handles it) |
+| Autologin not working | LightDM not recognizing changes | Double-check `[Seat:*]` exists in `lightdm.conf` |
+| X session crashes | Wrong permissions or script errors | Ensure `kiosk.sh` is executable and owned by the correct user |
+| Python app fails | Path is wrong or virtual env not activated | Hardcode full path to Python interpreter or activate venv manually |
+
+### Usage
+```
+# To enable kiosk mode
+./setup_kiosk_mode.sh
+
+# To disable kiosk mode
+./setup_kiosk_mode.sh disable
+```
+
+### Suggestion (Optional Improvments)
+*   Add a **dry run** flag for testing without reboot.
+    
+*   Log all operations to a file for easier debugging.
+    
+*   Add a **status check** mode to tell whether kiosk is currently active.
+
+## **Network Related Setup Script `setup_network.sh`**
+### Overview
+This script is an all-in-one setup for:
+*   **Remote access (Tailscale + ZeroTier + XRDP)**
+    
+*   **Hotspot creation (hostapd + dnsmasq)**
+    
+*   **Network sharing (NAT via iptables)**
+
+This guide provides a step-by-step procedure for setting up Tailscale, Zerotier, Hostapd, Dnsmasq, XRDP, and Internet Sharing on a Raspberry Pi. The setup ensures that the Raspberry Pi is able to share its internet connection over a local WiFi network, connect to Tailscale and Zerotier networks, and enable remote desktop access via XRDP. This setup is ideal for kiosk-mode Raspberry Pi use, enabling remote management and secure networking.
+
+### Purpose
+The purpose of this script is to automate the process of setting up essential network configurations and services on a Raspberry Pi, allowing it to:
+*   Connect securely to remote networks via **Tailscale** and **Zerotier**.
+    
+*   Act as an **access point** using **Hostapd** and **Dnsmasq** for local network sharing.
+    
+*   Enable **remote desktop access** via **XRDP** for easy management and configuration.
+    
+*   Provide internet access sharing from the Pi’s Ethernet to connected devices via WiFi.
+    
+*   Ensure seamless connectivity and remote access for Raspberry Pi devices in a kiosk or standalone mode.
+
+### Notes
+*   **Dependencies:** This setup assumes that the Raspberry Pi is running a Debian-based OS (e.g., Raspberry Pi OS) and has access to the internet for installing packages.
+    
+*   **Tailscale & Zerotier:** These tools enable secure VPN connections to private networks, providing remote access to the Raspberry Pi even when it’s behind NAT or a firewall.
+    
+*   **Hostapd & Dnsmasq:** These services are used to turn the Raspberry Pi into a WiFi access point and DHCP server, allowing devices to connect to the Raspberry Pi and access the internet.
+    
+*   **XRDP:** This service enables remote desktop access to the Raspberry Pi, allowing administrators to control the Pi from a Windows or other RDP-compatible device.
+    
+*   **Dynamic IP:** The script generates a random IP address in the `192.168.5.x` range for the Raspberry Pi’s WiFi interface (wlan0), ensuring no conflicts with existing networks.
+    
+*   **Static IP Configuration:** The script configures the Pi to have a static IP address on wlan0 for consistent network identification.
+
+### Improvement Ideas
+| **Improvement Idea** | **Description** |
+| --- | --- |
+| **Enhanced Security** | Add stronger encryption and security practices, such as using stronger passwords for WiFi and VPN connections, and implementing firewall rules. |
+| **Web Interface for Configuration** | Develop a simple web interface to manage the Raspberry Pi’s network settings, WiFi configurations, and remote access options (e.g., Tailscale, Zerotier). |
+| **Network Monitoring** | Implement tools like `netstat`, `iftop`, or `nload` to monitor network traffic and device connections, ensuring performance and troubleshooting. |
+| **Service Auto-Restart** | Set up systemd services to automatically restart critical services like hostapd, dnsmasq, and XRDP if they fail, ensuring high availability. |
+| **Better Logging** | Add logging features to capture important events such as IP address assignments, service restarts, and connection status for easier troubleshooting. |
+| **Improved WiFi Range** | Investigate using external USB WiFi adapters with better antennas or dual-band support to improve the WiFi range and performance for the access point. |
+| **Automation of Zerotier Network Approval** | Automate the process of approving devices on the Zerotier network via the API, reducing manual intervention. |
+
+
+## **Setup & Configuration Raspberry Pi `setup_raspberry_pi.sh`**
+### Overview
+This script automates the setup and configuration of the Raspberry Pi, including directory ownership, Python environment setup, FactoryApp deployment, Samba share configuration, I2C setup, and adding a cron job for automatic execution.
+
+### Purpose
+*   **Setup Directories and Permissions:** Configures directories and sets correct ownerships for `/usr/src/app`.
+    
+*   **Install Dependencies:** Installs necessary Python packages for the environment.
+    
+*   **Clone Repository:** Clones the FactoryApp repository and sets up the environment for development.
+    
+*   **Samba Configuration:** Installs and configures Samba for sharing a folder on the network.
+    
+*   **I2C Configuration:** Ensures I2C is enabled on the Raspberry Pi and the relevant modules are loaded.
+    
+*   **Cron Job for Boot Execution:** Sets up a cron job to run a script at boot.
+    
+*   **Reboot:** Reboots the Raspberry Pi to apply the configurations.
+
+### Notes
+*   **Ensure you have SSH access:** The script assumes SSH access to the Raspberry Pi for remote execution.
+    
+*   **Use `sudo` where required:** This script requires `sudo` for administrative tasks like installing packages and modifying configuration files.
+    
+*   **FactoryApp repository clone:** The script clones a repository and removes the original, so ensure this is the intended behavior.
+    
+*   **Permissions:** It applies permissions that may need careful consideration depending on your network setup, especially for the Samba share.
+    
+*   **Cron job:** The script adds a cron job to execute `update_ssid.sh` at boot. Ensure the path and script exist.
+
+### Improvement Ideas
+| **Improvement Idea** | **Description** |
+| --- | --- |
+| **Error Handling for Samba User Creation** | Add more robust checks around the creation of the Samba user to handle cases where the user already exists or the password creation fails. |
+| **Dynamic Directory Paths** | Make the directory paths configurable or pass them as arguments to make the script more flexible for different environments. |
+| **Post-Script Reboot Prompt** | Instead of automatically rebooting the system, prompt the user before rebooting to allow them to review the changes. |
+| **Optional Python Package Installation** | Allow the user to pass arguments to install optional Python packages based on the needs of the system (e.g., development tools or libraries). |
+| **Verify FactoryApp Clone** | Add a verification step to check if the `git clone` command was successful and handle errors if the repository doesn’t exist. |
+| **Service Check for Samba** | Ensure the Samba service is active before making configurations and restart it only if necessary. |
+| **Improve I2C Module Check** | Check whether I2C devices are actually connected and verify their operation after the module load. |
