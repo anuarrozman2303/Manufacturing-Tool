@@ -1,0 +1,5 @@
+pi-neo-1 Pi-neo-factory-1
+pi-neo-2 Pi-neo-factory-2
+pi-polyaire-1 Pi-polyaire-1
+175.139.179.193 adt-testserver
+100.91.224.14 adt-pi-office

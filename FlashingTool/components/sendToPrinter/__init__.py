@@ -1,0 +1,1 @@
+from .sendToPrinter import sendToPrinterFunc
